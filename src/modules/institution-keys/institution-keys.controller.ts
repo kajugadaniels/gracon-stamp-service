@@ -18,7 +18,7 @@ import { Throttle } from '@nestjs/throttler';
 import { InstitutionKeysService } from './institution-keys.service';
 import { GenerateInstitutionKeyDto } from './dto/generate-institution-key.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { RequestUser } from '../auth/interfaces/jwt-payload.interface';
+import type { RequestUser } from '../auth/interfaces/jwt-payload.interface';
 
 @ApiTags('Institution Keys')
 @ApiBearerAuth()

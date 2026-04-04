@@ -22,7 +22,7 @@ import {
   RevokeResolutionDto,
 } from './dto/create-resolution.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { RequestUser } from '../auth/interfaces/jwt-payload.interface';
+import type { RequestUser } from '../auth/interfaces/jwt-payload.interface';
 
 @ApiTags('Authority Resolutions')
 @ApiBearerAuth()

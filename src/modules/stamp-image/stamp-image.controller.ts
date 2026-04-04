@@ -20,7 +20,7 @@ import {
 } from '@nestjs/swagger';
 import { StampImageService } from './stamp-image.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { RequestUser } from '../auth/interfaces/jwt-payload.interface';
+import type { RequestUser } from '../auth/interfaces/jwt-payload.interface';
 
 @ApiTags('Stamp Image')
 @ApiBearerAuth()

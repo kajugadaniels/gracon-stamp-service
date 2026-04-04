@@ -18,7 +18,7 @@ import { InstitutionCertificatesService } from './institution-certificates.servi
 import { IssueInstitutionCertificateDto } from './dto/issue-institution-certificate.dto';
 import { RevokeInstitutionCertificateDto } from './dto/revoke-institution-certificate.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { RequestUser } from '../auth/interfaces/jwt-payload.interface';
+import type { RequestUser } from '../auth/interfaces/jwt-payload.interface';
 
 @ApiTags('Institution Certificates')
 @ApiBearerAuth()
