@@ -7,6 +7,12 @@ import { validateEnv } from './common/config/env.validation';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { S3Module } from './common/s3/s3.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { InstitutionModule } from './modules/institution/institution.module';
+import { AuthorityModule } from './modules/authority/authority.module';
+import { StampImageModule } from './modules/stamp-image/stamp-image.module';
+import { InstitutionKeysModule } from './modules/institution-keys/institution-keys.module';
+import { InstitutionCertificatesModule } from './modules/institution-certificates/institution-certificates.module';
+import { StampingModule } from './modules/stamping/stamping.module';
 
 // Feature modules registered per step below
 
@@ -21,6 +27,12 @@ import { AuthModule } from './modules/auth/auth.module';
     PrismaModule,
     S3Module,
     AuthModule,
+    InstitutionModule,
+    AuthorityModule,
+    StampImageModule,
+    InstitutionKeysModule,
+    InstitutionCertificatesModule,
+    StampingModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
