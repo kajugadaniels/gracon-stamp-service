@@ -50,7 +50,7 @@ export class InstitutionKeysService {
       dto.algorithm,
     );
 
-    const masterSecret = this.config.get<string>('STAMP_ENCRYPTION_SECRET');
+    const masterSecret = this.config.getOrThrow<string>('STAMP_ENCRYPTION_SECRET');
     const derivedKey = deriveInstitutionKey(masterSecret, institutionId);
     const privateKeyEncrypted = encryptInstitutionPrivateKey(
       privateKeyPem,
@@ -133,7 +133,7 @@ export class InstitutionKeysService {
       throw new NotFoundException('No active institution key pair found.');
     }
 
-    const masterSecret = this.config.get<string>('STAMP_ENCRYPTION_SECRET');
+    const masterSecret = this.config.getOrThrow<string>('STAMP_ENCRYPTION_SECRET');
     const derivedKey = deriveInstitutionKey(masterSecret, institutionId);
     return decryptInstitutionPrivateKey(
       keyPair.privateKeyEncrypted,
