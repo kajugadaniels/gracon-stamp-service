@@ -56,6 +56,10 @@ export class InstitutionCertificatesService {
       where: { id: institutionId },
     });
 
+    if (!institution) {
+      throw new NotFoundException('Institution not found.');
+    }
+
     // Decrypt private key momentarily — discard immediately after signing
     let privateKeyPem: string | null =
       await this.keys.decryptActivePrivateKey(institutionId);
