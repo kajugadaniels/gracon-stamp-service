@@ -6,6 +6,7 @@ import { ThrottlerGuard } from '@nestjs/throttler';
 import { validateEnv } from './common/config/env.validation';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { S3Module } from './common/s3/s3.module';
+import { AuthModule } from './modules/auth/auth.module';
 
 // Feature modules registered per step below
 
@@ -19,6 +20,7 @@ import { S3Module } from './common/s3/s3.module';
     ]),
     PrismaModule,
     S3Module,
+    AuthModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
