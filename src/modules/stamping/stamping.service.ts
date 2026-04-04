@@ -6,6 +6,10 @@ import { InstitutionKeysService } from '../institution-keys/institution-keys.ser
 import { InstitutionCertificatesService } from '../institution-certificates/institution-certificates.service';
 import { StampDocumentDto } from './dto/stamp-document.dto';
 import { VerifyStampDto } from './dto/verify-stamp.dto';
+import {
+  deriveInstitutionKey,
+  decryptInstitutionPrivateKey,
+} from '../institution-keys/helpers/institution-key-crypto.helper';
 
 @Injectable()
 export class StampingService {
@@ -85,18 +89,17 @@ export class StampingService {
     // Document this cross-service dependency clearly in both .env.example files.
     // This is intentional: the user's private key must be the same key
     // whose certificate third parties will verify against.
-    const { deriveUserKey, decryptPrivateKey } =
-      await import('../institution-keys/helpers/institution-key-crypto.helper');
-
-    // Re-derive using the SIGNATURE_ENCRYPTION_SECRET (from api/signature/)
-    // This env var must be set in api/stamp/ .env matching api/signature/
+    // Re-derive using the SIGNATURE_ENCRYPTION_SECRET (from api/signature/).
+    // deriveInstitutionKey and deriveUserKey are structurally identical (HMAC-SHA256).
+    // Calling it with userId produces the same result as api/signature/'s deriveUserKey.
+    // This env var must be set in api/stamp/ .env matching api/signature/.
     const signatureSecret = this.getSignatureEncryptionSecret();
-    const userDerivedKey = deriveUserKey(signatureSecret, userId);
+    const userDerivedKey = deriveInstitutionKey(signatureSecret, userId);
 
     let userPrivateKey: string | null;
 
     try {
-      userPrivateKey = decryptPrivateKey(
+      userPrivateKey = decryptInstitutionPrivateKey(
         personalKeyPair.privateKeyEncrypted,
         userDerivedKey,
       );
@@ -110,8 +113,10 @@ export class StampingService {
 
     try {
       const hashBuf = Buffer.from(documentHash, 'hex');
+      // Non-null assertion is safe — the catch block above throws on any failure,
+      // so if we reach this point userPrivateKey is guaranteed to be a string.
       userSignatureBytes = crypto
-        .sign('SHA256', hashBuf, userPrivateKey)
+        .sign('SHA256', hashBuf, userPrivateKey!)
         .toString('base64');
     } finally {
       userPrivateKey = null;
