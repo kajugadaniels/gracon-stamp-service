@@ -53,7 +53,7 @@ export class StampingService {
       );
     }
 
-    const instSecret = this.config.get<string>('INSTITUTION_ENCRYPTION_SECRET');
+    const instSecret = this.config.getOrThrow<string>('INSTITUTION_ENCRYPTION_SECRET');
     const instDerived = deriveInstitutionKey(instSecret, institutionId);
 
     let instPrivateKey: string | null = decryptInstitutionPrivateKey(
@@ -80,7 +80,7 @@ export class StampingService {
       );
     }
 
-    const sigSecret = this.config.get<string>('SIGNATURE_ENCRYPTION_SECRET');
+    const sigSecret = this.config.getOrThrow<string>('SIGNATURE_ENCRYPTION_SECRET');
     const userDerived = deriveUserKey(sigSecret, userId);
 
     let userPrivateKey: string | null = decryptPersonalPrivateKey(
