@@ -1,15 +1,24 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+  Logger,
+} from '@nestjs/common';
 import * as crypto from 'crypto';
+import { Request } from 'express';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { InstitutionService } from '../institution/institution.service';
-import { InstitutionKeysService } from '../institution-keys/institution-keys.service';
-import { InstitutionCertificatesService } from '../institution-certificates/institution-certificates.service';
+import { ConfigService } from '@nestjs/config';
 import { StampDocumentDto } from './dto/stamp-document.dto';
 import { VerifyStampDto } from './dto/verify-stamp.dto';
 import {
   deriveInstitutionKey,
   decryptInstitutionPrivateKey,
-} from '../institution-keys/helpers/institution-key-crypto.helper';
+} from './helpers/institution-crypto.helper';
+import {
+  deriveUserKey,
+  decryptPersonalPrivateKey,
+} from './helpers/personal-crypto.helper';
 
 @Injectable()
 export class StampingService {
@@ -17,109 +26,75 @@ export class StampingService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly institutions: InstitutionService,
-    private readonly institutionKeys: InstitutionKeysService,
-    private readonly institutionCerts: InstitutionCertificatesService,
+    private readonly config: ConfigService,
   ) {}
 
   async stamp(userId: string, dto: StampDocumentDto, ipAddress?: string) {
     const { institutionId, documentHash, documentName } = dto;
 
     // ── Step 1: Full authority chain validation ──────────────────────────────
-    // This gate runs BEFORE any key is decrypted.
-    // If any check fails the operation is blocked here — no crypto ever runs.
-    const { membership, resolution } =
-      await this.institutions.assertStampAuthority(institutionId, userId);
+    // This runs entirely via shared DB reads — no HTTP call to api/institution/
+    const { membership, resolution } = await this.validateAuthorityChain(
+      userId,
+      institutionId,
+    );
 
-    // ── Step 2: Both certificates must be active and valid ───────────────────
-    const institutionCert =
-      await this.institutionCerts.getActiveOrThrow(institutionId);
-
-    const personalCert = await this.prisma.personalCertificate.findFirst({
-      where: { userId, isRevoked: false },
-    });
-
-    if (!personalCert) {
-      throw new BadRequestException(
-        'You need a valid personal certificate in api/signature/ before stamping. ' +
-          'Issue one there first.',
-      );
-    }
-
-    if (personalCert.notAfter < new Date()) {
-      throw new BadRequestException(
-        'Your personal certificate has expired. Renew it in api/signature/.',
-      );
-    }
+    // ── Step 2: Both certificates must exist, be valid, not expired ──────────
+    const institutionCert = await this.getActiveInstitutionCert(institutionId);
+    const personalCert = await this.getActivePersonalCert(userId);
 
     // ── Step 3: Institution signature ────────────────────────────────────────
-    let institutionPrivateKey: string | null =
-      await this.institutionKeys.decryptActivePrivateKey(institutionId);
+    const institutionKeyPair = await this.prisma.institutionKeyPair.findFirst({
+      where: { institutionId, isActive: true },
+    });
+    if (!institutionKeyPair?.privateKeyEncrypted) {
+      throw new BadRequestException(
+        'Institution has no active key pair. Generate one in api/institution/ first.',
+      );
+    }
+
+    const instSecret = this.config.get<string>('INSTITUTION_ENCRYPTION_SECRET');
+    const instDerived = deriveInstitutionKey(instSecret, institutionId);
+
+    let instPrivateKey: string | null = decryptInstitutionPrivateKey(
+      institutionKeyPair.privateKeyEncrypted,
+      instDerived,
+    );
 
     let institutionSignatureBytes: string;
-
     try {
-      const hashBuf = Buffer.from(documentHash, 'hex');
       institutionSignatureBytes = crypto
-        .sign('SHA256', hashBuf, institutionPrivateKey)
+        .sign('SHA256', Buffer.from(documentHash, 'hex'), instPrivateKey)
         .toString('base64');
     } finally {
-      // Always discard — even if an error occurs
-      institutionPrivateKey = null;
+      instPrivateKey = null; // Always discard
     }
 
     // ── Step 4: User personal signature ─────────────────────────────────────
-    // The user's personal private key lives in the personal_key_pairs table
-    // and is encrypted with SIGNATURE_ENCRYPTION_SECRET from api/signature/.
-    // The stamp service reads the encrypted key and decrypts it using the
-    // same derivation pattern — both services share the same database.
-    // NOTE: In production, both services use their respective HSM clusters.
     const personalKeyPair = await this.prisma.personalKeyPair.findFirst({
       where: { userId, isActive: true },
     });
-
     if (!personalKeyPair?.privateKeyEncrypted) {
       throw new BadRequestException(
-        'No active personal key pair found. Generate one in api/signature/.',
+        'You have no active personal key pair. Generate one in api/signature/ first.',
       );
     }
 
-    // Derive the user key using STAMP_ENCRYPTION_SECRET — this only works if
-    // api/signature/ and api/stamp/ share the same SIGNATURE_ENCRYPTION_SECRET.
-    // Document this cross-service dependency clearly in both .env.example files.
-    // This is intentional: the user's private key must be the same key
-    // whose certificate third parties will verify against.
-    // Re-derive using the SIGNATURE_ENCRYPTION_SECRET (from api/signature/).
-    // deriveInstitutionKey and deriveUserKey are structurally identical (HMAC-SHA256).
-    // Calling it with userId produces the same result as api/signature/'s deriveUserKey.
-    // This env var must be set in api/stamp/ .env matching api/signature/.
-    const signatureSecret = this.getSignatureEncryptionSecret();
-    const userDerivedKey = deriveInstitutionKey(signatureSecret, userId);
+    const sigSecret = this.config.get<string>('SIGNATURE_ENCRYPTION_SECRET');
+    const userDerived = deriveUserKey(sigSecret, userId);
 
-    let userPrivateKey: string | null;
-
-    try {
-      userPrivateKey = decryptInstitutionPrivateKey(
-        personalKeyPair.privateKeyEncrypted,
-        userDerivedKey,
-      );
-    } catch {
-      throw new BadRequestException(
-        'Could not decrypt personal key. Ensure SIGNATURE_ENCRYPTION_SECRET matches api/signature/.',
-      );
-    }
+    let userPrivateKey: string | null = decryptPersonalPrivateKey(
+      personalKeyPair.privateKeyEncrypted,
+      userDerived,
+    );
 
     let userSignatureBytes: string;
-
     try {
-      const hashBuf = Buffer.from(documentHash, 'hex');
-      // Non-null assertion is safe — the catch block above throws on any failure,
-      // so if we reach this point userPrivateKey is guaranteed to be a string.
       userSignatureBytes = crypto
-        .sign('SHA256', hashBuf, userPrivateKey!)
+        .sign('SHA256', Buffer.from(documentHash, 'hex'), userPrivateKey)
         .toString('base64');
     } finally {
-      userPrivateKey = null;
+      userPrivateKey = null; // Always discard
     }
 
     // ── Step 5: Write immutable stamp record ─────────────────────────────────
@@ -168,7 +143,7 @@ export class StampingService {
     let personalCertId: string | undefined;
     let failReason: string | undefined;
 
-    // ── Verify institution signature ──────────────────────────────────────────
+    // Verify institution signature
     const institutionCert = await this.prisma.institutionCertificate.findFirst({
       where: { institutionId, isRevoked: false },
       orderBy: { createdAt: 'desc' },
@@ -192,7 +167,7 @@ export class StampingService {
       }
     }
 
-    // ── Verify user personal signature ────────────────────────────────────────
+    // Verify user personal signature
     const personalCert = await this.prisma.personalCertificate.findFirst({
       where: { userId, isRevoked: false },
       orderBy: { createdAt: 'desc' },
@@ -218,14 +193,12 @@ export class StampingService {
     }
 
     const result = institutionSigValid && userSigValid;
-
     if (!result && !failReason) {
       failReason = !institutionSigValid
-        ? 'Institution signature is invalid or document has been tampered with.'
-        : 'User signature is invalid or document has been tampered with.';
+        ? 'Institution signature is invalid — document may have been tampered with.'
+        : 'User signature is invalid — document may have been tampered with.';
     }
 
-    // ── Log verification attempt ──────────────────────────────────────────────
     await this.prisma.institutionStampVerification.create({
       data: {
         institutionCertificateId: institutionCertId ?? 'unknown',
@@ -286,30 +259,99 @@ export class StampingService {
     const stamp = await this.prisma.institutionStamp.findUnique({
       where: { id: stampId },
     });
-
-    if (!stamp) throw new BadRequestException('Stamp record not found.');
-
-    // Only the user who stamped or institution admins can view full details
+    if (!stamp) throw new NotFoundException('Stamp record not found.');
     if (stamp.userId !== requestingUserId) {
-      await this.institutions.assertInstitutionAdmin(
-        stamp.institutionId,
-        requestingUserId,
+      throw new ForbiddenException(
+        'You can only view stamp records that belong to you.',
       );
     }
-
     return stamp;
   }
 
-  // ─── Private ────────────────────────────────────────────────────────────────
+  // ─── Private: authority chain validation (DB reads only) ─────────────────
 
-  private getSignatureEncryptionSecret(): string {
-    const secret = process.env.SIGNATURE_ENCRYPTION_SECRET;
-    if (!secret) {
-      throw new BadRequestException(
-        'SIGNATURE_ENCRYPTION_SECRET is not configured in api/stamp/. ' +
-          'Add it to .env — it must match the value in api/signature/.',
+  private async validateAuthorityChain(userId: string, institutionId: string) {
+    const institution = await this.prisma.institution.findUnique({
+      where: { id: institutionId },
+    });
+    if (!institution?.isActive) {
+      throw new NotFoundException('Institution not found or is inactive.');
+    }
+
+    const membership = await this.prisma.institutionMember.findUnique({
+      where: { userId_institutionId: { userId, institutionId } },
+    });
+
+    if (!membership?.isActive) {
+      throw new ForbiddenException(
+        'You are not an active member of this institution.',
       );
     }
-    return secret;
+    if (!membership.stampAuthority) {
+      throw new ForbiddenException(
+        'You do not have stamp authority in this institution. ' +
+          'Contact your institution admin.',
+      );
+    }
+    if (!membership.resolutionId) {
+      throw new ForbiddenException(
+        'No authority resolution is linked to your stamp permission.',
+      );
+    }
+
+    const resolution = await this.prisma.authorityResolution.findUnique({
+      where: { id: membership.resolutionId },
+    });
+
+    if (!resolution?.isActive) {
+      throw new ForbiddenException(
+        'The authority resolution backing your stamp permission has been revoked.',
+      );
+    }
+    if (resolution.validUntil && resolution.validUntil < new Date()) {
+      throw new ForbiddenException(
+        'The authority resolution backing your stamp permission has expired.',
+      );
+    }
+
+    return { membership, resolution };
+  }
+
+  private async getActiveInstitutionCert(institutionId: string) {
+    const cert = await this.prisma.institutionCertificate.findFirst({
+      where: { institutionId, isRevoked: false },
+    });
+    if (!cert) {
+      throw new BadRequestException(
+        'This institution has no active certificate. ' +
+          'Issue one in api/institution/ first.',
+      );
+    }
+    if (cert.notAfter < new Date()) {
+      throw new BadRequestException(
+        'Institution certificate has expired. ' +
+          'Rotate the key pair and re-issue the certificate in api/institution/.',
+      );
+    }
+    return cert;
+  }
+
+  private async getActivePersonalCert(userId: string) {
+    const cert = await this.prisma.personalCertificate.findFirst({
+      where: { userId, isRevoked: false },
+    });
+    if (!cert) {
+      throw new BadRequestException(
+        'You have no active personal certificate. ' +
+          'Issue one in api/signature/ first.',
+      );
+    }
+    if (cert.notAfter < new Date()) {
+      throw new BadRequestException(
+        'Your personal certificate has expired. ' +
+          'Rotate your key pair and re-issue in api/signature/.',
+      );
+    }
+    return cert;
   }
 }
