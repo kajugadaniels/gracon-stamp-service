@@ -4,6 +4,7 @@ import {
   IsNotEmpty,
   IsNumber,
   IsIn,
+  IsOptional,
   Min,
   Max,
   MinLength,
@@ -43,6 +44,12 @@ class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
   FRONTEND_URL: string;
+
+  // Optional extra allowed origins for CORS, comma-separated.
+  // Used so multiple frontends (user, admin, documents) can call this API.
+  @IsOptional()
+  @IsString()
+  FRONTEND_URLS?: string;
 }
 
 export function validateEnv(config: Record<string, unknown>) {
