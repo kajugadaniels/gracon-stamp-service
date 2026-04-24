@@ -103,3 +103,7 @@ AWS_S3_BUCKET_NAME=
 - Capture verification metadata at stamp time, not after the fact
 - Treat stamping as a security-sensitive action, not just a UI feature
 
+## Testing Rule
+
+- If code is pure logic or can be mocked cleanly, add a unit test.
+- If code depends on Nest bootstrapping, DB wiring, or HTTP flow, prefer e2e or integration tests.
