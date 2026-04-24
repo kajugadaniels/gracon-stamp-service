@@ -6,6 +6,7 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { ThrottlerExceptionFilter } from './common/filters/throttler-exception.filter';
+import { buildCorsConfig } from './common/security/cors.config';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -15,10 +16,15 @@ async function bootstrap() {
 
   app.use(helmet());
   app.setGlobalPrefix('api/v1');
-  app.enableCors({
-    origin: config.get<string>('FRONTEND_URL'),
-    credentials: true,
-  });
+  // The stamp API may be reached from multiple frontend origins. The strict
+  // allowlist is composed from FRONTEND_URL plus any comma-separated entries
+  // in FRONTEND_URLS so the user/admin/documents apps can all call it.
+  app.enableCors(
+    buildCorsConfig(
+      config.get<string>('FRONTEND_URL', 'http://localhost:4000'),
+      config.get<string>('FRONTEND_URLS'),
+    ),
+  );
 
   app.useGlobalFilters(
     new GlobalExceptionFilter(),
