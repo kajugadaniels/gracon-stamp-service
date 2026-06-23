@@ -7,6 +7,10 @@
 - Never expose decrypted institutional or personal private keys.
 - Never log private keys, derivation secrets, certificate private material, or raw signing payload secrets.
 - `INSTITUTION_ENCRYPTION_SECRET` and `SIGNATURE_ENCRYPTION_SECRET` must stay server-only.
+- Do not add new private-key encryption secrets to this service.
+- Long term, replace local use of `INSTITUTION_ENCRYPTION_SECRET` and
+  `SIGNATURE_ENCRYPTION_SECRET` with internal signing APIs or KMS-backed
+  signing owned by `api/institution` and `api/signature`.
 
 ## Authority Rules
 
