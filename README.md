@@ -11,6 +11,9 @@ This service applies institutional stamps to documents using both institutional 
 - Database: shared Neon/Postgres via Prisma
 - Primary domain: institutional stamping and dual-signature proof generation
 
+First clone database setup:
+[docs/database-setup.md](./docs/database-setup.md)
+
 ## What This Service Owns
 
 - Stamp application workflow
