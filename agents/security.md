@@ -18,3 +18,7 @@
 
 - Capture certificate fingerprints and verification metadata at stamp time.
 - Do not create stamps that cannot be verified later.
+
+## Environment Rules
+
+- Use only runtime `DATABASE_URL` credentials here; `DATABASE_MIGRATION_URL` belongs only in `api/database`.
