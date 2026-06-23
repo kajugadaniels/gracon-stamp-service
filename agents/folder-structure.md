@@ -6,7 +6,6 @@
 src/
   common/           auth, Prisma, S3, config, filters, security
   modules/stamping/ stamp application workflow
-prisma/             shared-schema mirror for Prisma client generation
 agents/             AI execution rules
 ```
 
